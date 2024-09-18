@@ -1,0 +1,65 @@
+# Kibana Configuration
+
+# Server settings
+server.host: "0.0.0.0"
+server.port: 5601
+
+# Elasticsearch connection
+elasticsearch.hosts: ["https://elasticsearch:9200"]
+elasticsearch.username: "kibana_system"
+elasticsearch.password: "${KIBANA_SYSTEM_PASSWORD}"
+
+# SSL settings for Elasticsearch connection
+elasticsearch.ssl.verificationMode: certificate
+elasticsearch.ssl.certificate: "/usr/share/kibana/config/certs/kibana.crt"
+elasticsearch.ssl.key: "/usr/share/kibana/config/certs/kibana.key"
+elasticsearch.ssl.certificateAuthorities: ["/usr/share/kibana/config/certs/ca.crt"]
+
+# Security settings
+xpack.security.enabled: true
+xpack.encryptedSavedObjects.encryptionKey: "${KIBANA_ENCRYPTION_KEY}"
+
+# Monitoring settings
+monitoring.ui.container.elasticsearch.enabled: true
+
+# Logging settings
+logging.dest: stdout
+logging.root.level: info
+
+# Index pattern settings
+kibana.defaultAppId: "discover"
+kibana.index: ".kibana"
+
+# Time filter settings
+dateFormat:tz: "UTC"
+
+# Spaces settings
+xpack.spaces.enabled: true
+
+# Reporting settings
+xpack.reporting.enabled: true
+xpack.reporting.capture.browser.chromium.disableSandbox: true
+
+# APM settings (if you're using APM)
+# xpack.apm.ui.enabled: true
+# xpack.apm.serviceMaps.enabled: true
+
+# SAML authentication (if needed)
+# xpack.security.authc.providers:
+#   saml.saml1:
+#     order: 0
+#     realm: "saml1"
+#     description: "Log in with SSO"
+
+# Alerting and Actions (if needed)
+xpack.actions.enabled: true
+xpack.alerting.enabled: true
+
+# Telemetry settings
+telemetry.enabled: false
+
+# Set the Kibana server name
+server.name: "kibana"
+
+# Set the application title
+server.publicBaseUrl: "https://your-domain.com"
