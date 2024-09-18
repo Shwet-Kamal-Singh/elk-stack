@@ -1,0 +1,114 @@
+version: '3.8'  # Specify the version of Docker Compose file format
+
+services:
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.15.0  # Official Elasticsearch image
+    container_name: elasticsearch  # Name of the container
+    environment:
+      - node.name=elasticsearch  # Name of the Elasticsearch node
+      - cluster.name=es-docker-cluster  # Name of the Elasticsearch cluster
+      - discovery.type=single-node  # Run as a single-node cluster
+      - bootstrap.memory_lock=true  # Lock JVM memory for better performance
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"  # Set initial and maximum Java heap size
+      - ELASTIC_PASSWORD=${ELASTIC_PASSWORD}  # Set Elasticsearch password from .env file
+      - xpack.security.enabled=true  # Enable X-Pack security features
+      - xpack.security.transport.ssl.enabled=true  # Enable SSL for transport layer
+      - xpack.security.transport.ssl.verification_mode=certificate  # Verify SSL certificates
+      - xpack.security.transport.ssl.keystore.path=elastic-certificates.p12  # Path to SSL keystore
+      - xpack.security.transport.ssl.truststore.path=elastic-certificates.p12  # Path to SSL truststore
+      - xpack.security.audit.enabled=true  # Enable audit logging
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1  # Remove memory limits
+    volumes:
+      - ./elasticsearch/config/elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml:ro  # Mount config file
+      - ./elasticsearch/data:/usr/share/elasticsearch/data  # Persist Elasticsearch data
+      - ./elasticsearch/certs:/usr/share/elasticsearch/config/certs  # Mount SSL certificates
+      - ./elasticsearch/backup:/usr/share/elasticsearch/backup  # Mount backup directory
+    ports:
+      - "9200:9200"  # Expose Elasticsearch HTTP API port
+    networks:
+      - elk  # Connect to the ELK network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s --cacert config/certs/ca.crt https://localhost:9200 >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5  # Healthcheck to ensure Elasticsearch is running
+
+  logstash:
+    image: docker.elastic.co/logstash/logstash:7.15.0  # Official Logstash image
+    container_name: logstash  # Name of the container
+    volumes:
+      - ./logstash/config/logstash.yml:/usr/share/logstash/config/logstash.yml:ro  # Mount config file
+      - ./logstash/pipeline:/usr/share/logstash/pipeline:ro  # Mount pipeline configurations
+      - ./elasticsearch/certs:/usr/share/logstash/config/certs  # Mount SSL certificates
+    ports:
+      - "5000:5000/tcp"  # Expose Logstash TCP input port
+      - "5000:5000/udp"  # Expose Logstash UDP input port
+      - "9600:9600"  # Expose Logstash monitoring API port
+    environment:
+      LS_JAVA_OPTS: "-Xmx256m -Xms256m"  # Set initial and maximum Java heap size
+      LOGSTASH_INTERNAL_PASSWORD: ${LOGSTASH_INTERNAL_PASSWORD}  # Set Logstash password from .env file
+    networks:
+      - elk  # Connect to the ELK network
+    depends_on:
+      - elasticsearch  # Ensure Elasticsearch starts before Logstash
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9600/_node/stats"]
+      interval: 30s
+      timeout: 10s
+      retries: 5  # Healthcheck to ensure Logstash is running
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:7.15.0  # Official Kibana image
+    container_name: kibana  # Name of the container
+    volumes:
+      - ./kibana/config/kibana.yml:/usr/share/kibana/config/kibana.yml:ro  # Mount config file
+      - ./elasticsearch/certs:/usr/share/kibana/config/certs  # Mount SSL certificates
+    ports:
+      - "5601:5601"  # Expose Kibana web interface port
+    environment:
+      ELASTICSEARCH_USERNAME: kibana_system  # Elasticsearch username for Kibana
+      ELASTICSEARCH_PASSWORD: ${KIBANA_SYSTEM_PASSWORD}  # Set Kibana password from .env file
+    networks:
+      - elk  # Connect to the ELK network
+    depends_on:
+      - elasticsearch  # Ensure Elasticsearch starts before Kibana
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5601"]
+      interval: 30s
+      timeout: 10s
+      retries: 5  # Healthcheck to ensure Kibana is running
+
+  nginx:
+    image: nginx:latest  # Official Nginx image
+    container_name: nginx  # Name of the container
+    volumes:
+      - ./nginx/config/nginx.conf:/etc/nginx/nginx.conf:ro  # Mount Nginx configuration
+      - ./nginx/certbot/conf:/etc/letsencrypt  # Mount Let's Encrypt certificates
+      - ./nginx/certbot/www:/var/www/certbot  # Mount webroot for ACME challenges
+    ports:
+      - "80:80"  # Expose HTTP port
+      - "443:443"  # Expose HTTPS port
+    command: "/bin/sh -c 'while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g \"daemon off;\"'"  # Reload Nginx every 6 hours to renew SSL certificates
+    networks:
+      - elk  # Connect to the ELK network
+    depends_on:
+      - kibana  # Ensure Kibana starts before Nginx
+
+  certbot:
+    image: certbot/certbot  # Official Certbot image
+    container_name: certbot  # Name of the container
+    volumes:
+      - ./nginx/certbot/conf:/etc/letsencrypt  # Mount Let's Encrypt certificates
+      - ./nginx/certbot/www:/var/www/certbot  # Mount webroot for ACME challenges
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"  # Automatically renew SSL certificates every 12 hours
+
+networks:
+  elk:
+    driver: bridge  # Create a bridge network for ELK stack communication
+
+volumes:
+  elasticsearch-data:
+    driver: local  # Use local driver for Elasticsearch data persistence
